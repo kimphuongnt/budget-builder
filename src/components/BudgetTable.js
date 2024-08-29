@@ -218,7 +218,6 @@ const BudgetTable = ({ months }) => {
     if (contextMenu.cellData) {
       const { rowId, month } = contextMenu.cellData;
       const cellValue = rows.find((row) => row.id === rowId).values[month];
-
       setRows((prevRows) =>
         prevRows.map((row) =>
           row.id === rowId
@@ -235,7 +234,6 @@ const BudgetTable = ({ months }) => {
             : row
         )
       );
-
       setContextMenu({
         ...contextMenu,
         visible: false,
@@ -246,13 +244,9 @@ const BudgetTable = ({ months }) => {
   const handleClickOutside = useCallback(() => {
     setContextMenu({ ...contextMenu, visible: false });
   }, [contextMenu]);
-
   useEffect(() => {
-    // Add event listener to handle click outside
     document.addEventListener('mousedown', handleClickOutside);
-    
     return () => {
-      // Clean up the event listener
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [handleClickOutside]);
