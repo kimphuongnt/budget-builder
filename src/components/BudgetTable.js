@@ -394,6 +394,7 @@ const BudgetTable = ({ months }) => {
                       el)
                   }
                 />
+                
               </td>
               {months.map((month, index) => (
                 <td
