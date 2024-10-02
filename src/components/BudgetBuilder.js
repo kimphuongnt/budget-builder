@@ -22,7 +22,7 @@ const BudgetBuilder = () => {
   };
 
   const months = generateMonths(startMonth, endMonth);
-
+  
   const handleStartMonthChange = (e) => {
     setStartMonth(e.target.value);
   };

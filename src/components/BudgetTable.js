@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 
 const BudgetTable = ({ months }) => {
-  
   const [rows, setRows] = useState([
     {
       id: 1,
@@ -25,6 +24,7 @@ const BudgetTable = ({ months }) => {
       category: "expenses",
     },
   ]);
+
   const [contextMenu, setContextMenu] = useState({
     visible: false,
     x: 0,
@@ -80,7 +80,9 @@ const BudgetTable = ({ months }) => {
     );
   };
 
-  const handleKeyDown = (e, rowId) => {
+  const inputRefs = useRef({});
+
+  const handleKeyDown = (e, rowId, subRowId, month, index) => {
     if (e.key === "Enter") {
       e.preventDefault();
       const currentRow = rows.find((row) => row.id === rowId);
@@ -106,37 +108,76 @@ const BudgetTable = ({ months }) => {
           )
         );
       }
-    }
-  };
-
-  const handleSubRowKeyDown = (e, rowId, subRowId) => {
-    if (e.key === "Enter") {
+    } else if (e.key === "Delete") {
       e.preventDefault();
-      const currentRow = rows.find((row) => row.id === rowId);
-      if (
-        currentRow &&
-        currentRow.subRows.find((subRow) => subRow.id === subRowId)
-      ) {
-        setRows((prevRows) =>
-          prevRows.map((row) =>
-            row.id === rowId
-              ? {
-                  ...row,
-                  subRows: [
-                    ...row.subRows,
-                    {
-                      id: Date.now(),
-                      name: "",
-                      values: months.reduce(
-                        (acc, month) => ({ ...acc, [month]: "" }),
-                        {}
-                      ),
-                    },
-                  ],
-                }
-              : row
-          )
-        );
+      deleteRow(rowId, subRowId);
+    } else if (
+      ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)
+    ) {
+      e.preventDefault();
+      let newRowId = rowId;
+      let newSubRowId = subRowId;
+      let newMonth = month;
+      let newIndex = index;
+
+      if (e.key === "ArrowUp") {
+        if (subRowId) {
+          const currentRow = rows.find((row) => row.id === rowId);
+          const subRowIndex = currentRow.subRows.findIndex(
+            (sr) => sr.id === subRowId
+          );
+          if (subRowIndex > 0) {
+            newSubRowId = currentRow.subRows[subRowIndex - 1].id;
+          } else {
+            newSubRowId = null;
+          }
+        } else {
+          const rowIndex = rows.findIndex((row) => row.id === rowId);
+          if (rowIndex > 0) {
+            newRowId = rows[rowIndex - 1].id;
+            const prevRow = rows[rowIndex - 1];
+            if (prevRow.subRows.length > 0) {
+              newSubRowId = prevRow.subRows[prevRow.subRows.length - 1].id;
+            }
+          }
+        }
+      } else if (e.key === "ArrowDown") {
+        const currentRow = rows.find((row) => row.id === rowId);
+        if (subRowId) {
+          const subRowIndex = currentRow.subRows.findIndex(
+            (sr) => sr.id === subRowId
+          );
+          if (subRowIndex < currentRow.subRows.length - 1) {
+            newSubRowId = currentRow.subRows[subRowIndex + 1].id;
+          } else {
+            const rowIndex = rows.findIndex((row) => row.id === rowId);
+            if (rowIndex < rows.length - 1) {
+              newRowId = rows[rowIndex + 1].id;
+              newSubRowId = null;
+            }
+          }
+        } else {
+          if (currentRow.subRows.length > 0) {
+            newSubRowId = currentRow.subRows[0].id;
+          } else {
+            const rowIndex = rows.findIndex((row) => row.id === rowId);
+            if (rowIndex < rows.length - 1) {
+              newRowId = rows[rowIndex + 1].id;
+            }
+          }
+        }
+      } else if (e.key === "ArrowLeft") {
+        newIndex = Math.max(0, index - 1);
+        newMonth = months[newIndex];
+      } else if (e.key === "ArrowRight") {
+        newIndex = Math.min(months.length - 1, index + 1);
+        newMonth = months[newIndex];
+      }
+
+      const nextInput =
+        inputRefs.current[`${newRowId}-${newSubRowId}-${newMonth}`];
+      if (nextInput) {
+        nextInput.focus();
       }
     }
   };
@@ -204,50 +245,88 @@ const BudgetTable = ({ months }) => {
     ]);
   };
 
-  const handleContextMenu = (e, rowId, month) => {
+  const deleteRow = (rowId, subRowId = null) => {
+    setRows((prevRows) => {
+      if (subRowId) {
+        return prevRows.map((row) =>
+          row.id === rowId
+            ? {
+                ...row,
+                subRows: row.subRows.filter((subRow) => subRow.id !== subRowId),
+              }
+            : row
+        );
+      } else {
+        return prevRows.filter((row) => row.id !== rowId);
+      }
+    });
+  };
+
+  const handleContextMenu = (e, rowId, subRowId, month) => {
     e.preventDefault();
     setContextMenu({
       visible: true,
       x: e.clientX,
       y: e.clientY,
-      cellData: { rowId, month },
+      cellData: { rowId, subRowId, month },
     });
   };
 
-  const handleApplyToAll = () => {
+  const handleApplyToAll = useCallback(() => {
     if (contextMenu.cellData) {
-      const { rowId, month } = contextMenu.cellData;
-      const cellValue = rows.find((row) => row.id === rowId).values[month];
-      setRows((prevRows) =>
-        prevRows.map((row) =>
-          row.id === rowId
-            ? {
+      const { rowId, subRowId, month } = contextMenu.cellData;
+
+      setRows((prevRows) => {
+        return prevRows.map((row) => {
+          if (row.id === rowId) {
+            if (subRowId) {
+              return {
+                ...row,
+                subRows: row.subRows.map((subRow) => {
+                  if (subRow.id === subRowId) {
+                    const cellValue = subRow.values[month];
+                    return {
+                      ...subRow,
+                      values: Object.keys(subRow.values).reduce(
+                        (acc, m) => ({ ...acc, [m]: cellValue }),
+                        {}
+                      ),
+                    };
+                  }
+                  return subRow;
+                }),
+              };
+            } else {
+              const cellValue = row.values[month];
+              return {
                 ...row,
                 values: Object.keys(row.values).reduce(
-                  (acc, m) => ({
-                    ...acc,
-                    [m]: cellValue,
-                  }),
+                  (acc, m) => ({ ...acc, [m]: cellValue }),
                   {}
                 ),
-              }
-            : row
-        )
-      );
-      setContextMenu({
-        ...contextMenu,
-        visible: false,
+              };
+            }
+          }
+          return row;
+        });
       });
-    }
-  };
 
+      setContextMenu({ ...contextMenu, visible: false });
+    }
+  }, [contextMenu, setRows]);
+
+  console.log(contextMenu.cellData);
   const handleClickOutside = useCallback(() => {
     setContextMenu({ ...contextMenu, visible: false });
   }, [contextMenu]);
+
   useEffect(() => {
-    document.addEventListener('mousedown', handleClickOutside);
+    // Add event listener to handle click outside
+    document.addEventListener("mousedown", handleClickOutside);
+
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      // Clean up the event listener
+      document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [handleClickOutside]);
 
@@ -263,19 +342,22 @@ const BudgetTable = ({ months }) => {
                 className="w-full border-none outline-none"
                 value={row.name}
                 onChange={(e) => handleNameChange(row.id, e.target.value)}
-                onKeyDown={(e) => handleKeyDown(e, row.id)}
+                onKeyDown={(e) => handleKeyDown(e, row.id, null, months[0], 0)}
                 disabled={
                   row.name === "General Income" ||
                   row.name === "Other Income" ||
                   row.name === "Operational Expenses"
                 }
+                ref={(el) =>
+                  (inputRefs.current[`${row.id}-null-${months[0]}`] = el)
+                }
               />
             </td>
-            {months.map((month) => (
+            {months.map((month, index) => (
               <td
                 key={month}
                 className="border border-black text-right"
-                onContextMenu={(e) => handleContextMenu(e, row.id, month)}
+                onContextMenu={(e) => handleContextMenu(e, row.id, null, month)}
               >
                 <input
                   type="text"
@@ -284,13 +366,18 @@ const BudgetTable = ({ months }) => {
                   onChange={(e) =>
                     handleInputChange(row.id, month, e.target.value)
                   }
-                  onKeyDown={(e) => handleKeyDown(e, row.id)}
+                  onKeyDown={(e) =>
+                    handleKeyDown(e, row.id, null, month, index)
+                  }
+                  ref={(el) =>
+                    (inputRefs.current[`${row.id}-null-${month}`] = el)
+                  }
                 />
               </td>
             ))}
           </tr>
           {row.subRows.map((subRow) => (
-            <tr key={subRow.id} className="bg-gray-100">
+            <tr key={subRow.id} className="">
               <td className="border border-black">
                 <input
                   type="text"
@@ -299,14 +386,22 @@ const BudgetTable = ({ months }) => {
                   onChange={(e) =>
                     handleSubRowNameChange(row.id, subRow.id, e.target.value)
                   }
-                  onKeyDown={(e) => handleSubRowKeyDown(e, row.id, subRow.id)}
+                  onKeyDown={(e) =>
+                    handleKeyDown(e, row.id, subRow.id, months[0], 0)
+                  }
+                  ref={(el) =>
+                    (inputRefs.current[`${row.id}-${subRow.id}-${months[0]}`] =
+                      el)
+                  }
                 />
               </td>
-              {months.map((month) => (
+              {months.map((month, index) => (
                 <td
                   key={month}
                   className="border border-black text-right"
-                  onContextMenu={(e) => handleContextMenu(e, row.id, month)}
+                  onContextMenu={(e) =>
+                    handleContextMenu(e, row.id, subRow.id, month)
+                  }
                 >
                   <input
                     type="text"
@@ -320,7 +415,13 @@ const BudgetTable = ({ months }) => {
                         e.target.value
                       )
                     }
-                    onKeyDown={(e) => handleSubRowKeyDown(e, row.id, subRow.id)}
+                    onKeyDown={(e) =>
+                      handleKeyDown(e, row.id, subRow.id, month, index)
+                    }
+                    ref={(el) =>
+                      (inputRefs.current[`${row.id}-${subRow.id}-${month}`] =
+                        el)
+                    }
                   />
                 </td>
               ))}
@@ -432,7 +533,13 @@ const BudgetTable = ({ months }) => {
         >
           <button
             className="block px-4 py-2 text-left"
-            onClick={handleApplyToAll}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleApplyToAll();
+            }}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+            }}
           >
             Apply to All
           </button>
